@@ -10,7 +10,7 @@ import abc
 import itertools
 from typing import Any
 from torch import nn
-from torch.nn import functional as F
+# from torch.nn import functional as F
 from torch import optim
 
 import numpy as np
@@ -63,7 +63,7 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
     ----------
     mean_net: nn.Sequential
         A neural network that outputs the mean for continuous actions
-    logstd: nn.Parameter
+    log_std: nn.Parameter
         A separate parameter to learn the standard deviation of actions
 
     Methods
@@ -100,7 +100,7 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
             n_layers=self.n_layers, size=self.size,
         )
         self.mean_net.to(ptu.device)
-        self.logstd = nn.Parameter(
+        self.log_std = nn.Parameter(
 
             torch.zeros(self.ac_dim, dtype=torch.float32, device=ptu.device)
         )
@@ -129,9 +129,11 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
         # through it. For example, you can return a torch.FloatTensor. You can also
         # return more flexible objects, such as a
         # `torch.distributions.Distribution` object. It's up to you!
-        raise NotImplementedError
+        # raise NotImplementedError
+        _mean = self.mean_net(observation)
+        return distributions.Normal(_mean, scale=self.log_std)
 
-    def update(self, observations, actions):
+    def update(self, observations: np.ndarray, actions: np.ndarray, **kwargs) -> dict:
         """
         Updates/trains the policy
 
@@ -141,8 +143,18 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
             dict: 'Training Loss': supervised learning loss
         """
         # TODO: update the policy and return the loss
-        loss = TODO
+        # loss = TODO
+        epoch_loss = 0
+        for curr_states, curr_actions in zip(observations, actions):
+            our_policy_distribution = self(curr_states)
+            loss = -our_policy_distribution.log_prob(curr_actions).sum()
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            epoch_loss += loss.detach().cpu().numpy().squeeze()
+            self.optimizer.step()
+
         return {
             # You can add extra logging information here, but keep this line
-            'Training Loss': ptu.to_numpy(loss),
+            'Training Loss': ptu.to_numpy(epoch_loss),
         }
